@@ -94,6 +94,11 @@ scripts/
 
 MIT.
 
----
+## Contato
 
-Feito pela [Triadeflow](https://triadeflow.com.br).
+Feito pela **Triadeflow**.
+
+- Site: [triadeflow.com.br](https://triadeflow.com.br)
+- Instagram: [@triadeflow.ia](https://instagram.com/triadeflow.ia)
+- E-mail: contato@triadeflow.com.br
+- Telefone: (11) 4863-4209
