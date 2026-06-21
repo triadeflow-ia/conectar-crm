@@ -1,0 +1,9 @@
+# NUNCA versionar secrets
+.secrets/
+*.env
+.env
+secrets/
+clientes/
+__pycache__/
+*.pyc
+.DS_Store

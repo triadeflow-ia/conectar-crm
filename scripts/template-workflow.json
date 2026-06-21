@@ -1,0 +1,542 @@
+{
+  "name": "__NOME_WF__",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "__SLUG__-wordpress",
+        "options": {}
+      },
+      "id": "webhook-wordpress",
+      "name": "Webhook WordPress",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -760,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "__SLUG__-inlead",
+        "options": {}
+      },
+      "id": "webhook-inlead",
+      "name": "Webhook InLead",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -760,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return { json: { body: $json.body || {}, headers: $json.headers || {}, query: $json.query || {}, _origem: 'site-wordpress' } };"
+      },
+      "id": "origem-wordpress",
+      "name": "Origem WordPress",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -540,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return { json: { body: $json.body || {}, headers: $json.headers || {}, query: $json.query || {}, _origem: 'inlead' } };"
+      },
+      "id": "origem-inlead",
+      "name": "Origem InLead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -540,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// CONFIG DO CLIENTE - location_id (nao-secreto). O PIT vive na credencial do n8n.\nreturn { json: Object.assign({}, $json, {\n  location_id: '__LOCATION_ID__',\n  cliente: '__CLIENTE__'\n}) };"
+      },
+      "id": "config",
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// EXTRAIR CAMPOS - generico (template Form -> GHL)\nconst input = $json || {};\nconst body = input.body || {};\nconst headers = input.headers || {};\nconst origem = input._origem || 'form';\n\nif (!body || Object.keys(body).length === 0) {\n  return { json: { _skip: true, _nivel: 'bloqueio', _motivo: 'Payload vazio', _all_fields: {}, _campos_novos: [], tags: [] } };\n}\n\nfunction norm(s){ return (s||'').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }\n\nconst isStructured = Object.keys(body).some(k => k.startsWith('fields['));\nconst byTitle = {};\nlet allFields = {};\n\nif (isStructured) {\n  const ids = new Set();\n  for (const k of Object.keys(body)) { const m = k.match(/^fields\\[([^\\]]+)\\]\\[id\\]$/); if (m) ids.add(m[1]); }\n  for (const fid of ids) {\n    const title = (body['fields['+fid+'][title]'] || '').trim();\n    const value = body['fields['+fid+'][value]'] || '';\n    const type = body['fields['+fid+'][type]'] || '';\n    if (type === 'step' || !title) continue;\n    byTitle[title.toLowerCase()] = value;\n    if (value !== '') allFields[title] = value;\n  }\n} else {\n  const skip = ['date','time','page url','user agent','remote ip','form[id]','form[name]','form_id','form_name','action','referrer'];\n  for (const [k,v] of Object.entries(body)) {\n    if (skip.includes(k.toLowerCase()) || k.startsWith('No Label')) continue;\n    if (k && v !== '' && v != null) { byTitle[k.trim().toLowerCase()] = v; allFields[k.trim()] = v; }\n  }\n}\n\nfunction find(keys){ for (const [t,v] of Object.entries(byTitle)){ const tn=norm(t); if (keys.some(k=>tn.includes(norm(k)))) return v; } return ''; }\n\nconst nome = (body['fields[name][value]'] || find(['nome','name','seu nome']) || '').toString().trim();\nconst email = (body['fields[email][value]'] || find(['email','e-mail']) || '').toString().toLowerCase().trim();\nconst telRaw = (body['fields[phone][value]'] || find(['whatsapp','telefone','celular','phone']) || '').toString();\n\nlet d = telRaw.replace(/\\D/g,'');\nif (d.startsWith('55') && d.length >= 12) d = d.substring(2);\nif (d.length === 10 && d.charAt(2) !== '9') d = d.substring(0,2) + '9' + d.substring(2);\nconst telefone = d.length >= 10 ? '+55'+d : (d.length > 0 ? '+'+d : '');\n\nconst formName = (body['form[name]'] || body['form_name'] || '').toString();\nconst tagForm = norm(formName).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');\nconst tags = ['origem-'+origem];\nif (tagForm) tags.push(tagForm);\n\n// tratamento InLead (quiz): limpar ruido + de-para das respostas pros campos do cliente\nif (origem === 'inlead') {\n  const DEPARA_QUIZ = {\n    'etapa_01_genero': 'Gênero',\n    'etapa_03_ja_fez_antes': 'Já fez harmonização antes',\n    'etapa_04_o_que_incomoda': 'O que incomoda',\n    'etapa_05_em_quais_dessas': 'Situações desconfortáveis',\n    'etapa_06_faria': 'Disposição (Faria)'\n  };\n  const limpo = {};\n  for (const [k, v] of Object.entries(allFields)) {\n    const kl = k.toLowerCase();\n    // ignorar ruido do InLead (tracking, score, responses consolidado, botoes clicados, code)\n    if (v === 'clicked' || kl === 'code' || kl.startsWith('tracking') || kl.startsWith('score')\n        || kl.startsWith('responses') || kl.startsWith('botao')) continue;\n    if (DEPARA_QUIZ[kl]) { limpo[DEPARA_QUIZ[kl]] = v; continue; }\n    if (/^etapa_02_/i.test(kl)) { limpo['Faixa de Idade'] = v; continue; }  // idade (etapa_02_homem/mulher)\n    const m = k.match(/^etapa_\\d+_(.+)$/i);\n    if (m) { limpo[m[1].replace(/_/g, ' ')] = v; continue; }  // demais etapas: tira prefixo\n    limpo[k] = v;\n  }\n  allFields = limpo;\n}\n\n// derivar Midia (Pago/Organico) a partir dos UTMs -> canal principal automatico\nconst _us = (byTitle['utm_source'] || '').toString().toLowerCase();\nconst _um = (byTitle['utm_medium'] || '').toString().toLowerCase();\nconst _uc = (byTitle['utm_campaign'] || '').toString().toLowerCase();\nconst _blob = _us + ' ' + _um + ' ' + _uc;\nconst _org = /organic|organ|bio|perfil|link.?bio|direct|whats/.test(_blob);\nconst midia = (_uc && !_org) ? 'Pago' : 'Organico';\nallFields['Mídia'] = midia;\ntags.push('midia-' + midia.toLowerCase());\n\n// Origem do Lead (lista igual Talentus): prioridade anuncio > fonte do form\nlet origem_lead;\nif (_uc && !_org) origem_lead = 'Trafego Pago';\nelse if (origem === 'site-wordpress') origem_lead = 'Pop-up Pagina';\nelse origem_lead = 'Organico';\nallFields['Origem do Lead'] = origem_lead;\n\nconst basic = ['nome','name','seu nome','email','e-mail','whatsapp','telefone','celular','phone'];\nconst camposNovos = [];\nfor (const t of Object.keys(allFields)) {\n  const tn = norm(t);\n  if (basic.some(b => tn.includes(norm(b)))) continue;\n  camposNovos.push(t);\n}\n\nlet nivel = 'normal', motivo = '';\nif (/<script|onerror=|javascript:|<iframe/i.test(JSON.stringify(body))) { nivel='bloqueio'; motivo='html injection'; }\nconst disp = ['mailinator','tempmail','guerrillamail','yopmail','10minutemail'];\nif (email && disp.some(x => email.includes(x))) { nivel='bloqueio'; motivo='email descartavel'; }\n\nconst skip = nivel === 'bloqueio' || (!email && !telefone) || !nome;\n\nreturn { json: {\n  nome, email, telefone,\n  formulario: formName || ('form-'+origem),\n  origem, tags,\n  _all_fields: allFields,\n  _campos_novos: camposNovos,\n  _skip: skip, _nivel: nivel, _motivo: motivo,\n  data_cadastro: new Date().toISOString()\n}};"
+      },
+      "id": "extrair-campos",
+      "name": "Extrair Campos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "Payload Valido?-c",
+              "leftValue": "={{ $json._skip }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "payload-valido",
+      "name": "Payload Valido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://services.leadconnectorhq.com/locations/{{ $('Config').item.json.location_id }}/customFields",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Version",
+              "value": "2021-07-28"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "listar-cfs",
+      "name": "Listar CFs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        340,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__CRED_ID__",
+          "name": "__CRED_NAME__"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// MAPEAR CAMPOS - match dos campos do form com os Custom Fields existentes do cliente.\n// SEM PIT (listagem vem do node \"Listar CFs\" via credencial). Match-only; sem match -> _nao_mapeados.\nconst data = $('Extrair Campos').item.json;\nconst camposNovos = data._campos_novos || [];\nconst allFields = data._all_fields || {};\nconst existing = ($('Listar CFs').item.json.customFields) || [];\n\nfunction norm(s){ return (s||'').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9 ]+/g,' ').replace(/\\s+/g,' ').trim(); }\n\nfunction findMatch(t, list){\n  const nn = norm(t); if (!nn) return null;\n  for (const ef of list) if (norm(ef.name) === nn) return ef;\n  if (nn.length >= 12) for (const ef of list){ const en = norm(ef.name); if (en.length >= 10 && (en.includes(nn) || nn.includes(en))) return ef; }\n  const nt = nn.split(' ').filter(x => x.length > 3);\n  for (const ef of list){ const et = norm(ef.name).split(' ').filter(x => x.length > 3); if (nt.filter(x => et.includes(x)).length >= 3) return ef; }\n  return null;\n}\n\nconst extra = [], logs = [], naoMapeados = [];\nfor (const t of camposNovos) {\n  const val = allFields[t]; if (!val) continue;\n  const m = findMatch(t, existing);\n  if (m) { extra.push({ id: m.id, field_value: val }); logs.push('MATCH '+t.substring(0,40)+' -> '+m.name); }\n  else { naoMapeados.push(t+': '+val); logs.push('SEM_MATCH '+t.substring(0,40)); }\n}\nreturn { json: Object.assign({}, data, { extra_custom_fields: extra, _nao_mapeados: naoMapeados, _cf_logs: logs }) };"
+      },
+      "id": "mapear-campos",
+      "name": "Mapear Campos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://services.leadconnectorhq.com/contacts/search/duplicate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Version",
+              "value": "2021-07-28"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "locationId",
+              "value": "={{ $('Config').item.json.location_id }}"
+            },
+            {
+              "name": "number",
+              "value": "={{ $('Extrair Campos').item.json.telefone }}"
+            },
+            {
+              "name": "email",
+              "value": "={{ $('Extrair Campos').item.json.email }}"
+            }
+          ]
+        }
+      },
+      "id": "buscar-contato-ghl",
+      "name": "Buscar Contato GHL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        780,
+        -40
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__CRED_ID__",
+          "name": "__CRED_NAME__"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "Contato Existe?-c",
+              "leftValue": "={{ $json.contact?.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "contato-existe",
+      "name": "Contato Existe?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1000,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://services.leadconnectorhq.com/contacts/{{ $json.contact.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Version",
+              "value": "2021-07-28"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tags: $('Extrair Campos').item.json.tags, customFields: ($('Mapear Campos').item.json.extra_custom_fields || []) }) }}"
+      },
+      "id": "atualizar-contato",
+      "name": "Atualizar Contato",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1220,
+        -160
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__CRED_ID__",
+          "name": "__CRED_NAME__"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/contacts/",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Version",
+              "value": "2021-07-28"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ locationId: $('Config').item.json.location_id, firstName: $('Extrair Campos').item.json.nome, email: $('Extrair Campos').item.json.email || undefined, phone: $('Extrair Campos').item.json.telefone || undefined, source: $('Extrair Campos').item.json.formulario, tags: $('Extrair Campos').item.json.tags, customFields: ($('Mapear Campos').item.json.extra_custom_fields || []) }) }}"
+      },
+      "id": "criar-contato",
+      "name": "Criar Contato",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1220,
+        60
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__CRED_ID__",
+          "name": "__CRED_NAME__"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// LINHA SHEETS - achata o lead em colunas universais (serve pra qualquer cliente)\nconst d = $('Mapear Campos').item.json;\nreturn { json: {\n  nome: d.nome || '',\n  email: d.email || '',\n  telefone: d.telefone || '',\n  origem: d.origem || '',\n  formulario: d.formulario || '',\n  data_cadastro: d.data_cadastro || '',\n  tags: (d.tags || []).join(', '),\n  dados: JSON.stringify(d._all_fields || {})\n}};"
+      },
+      "id": "linha-sheets",
+      "name": "Linha Sheets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__SHEET_ID__"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "backup-sheets",
+      "name": "Backup Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1000,
+        220
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "__GS_CRED_ID__",
+          "name": "__GS_CRED_NAME__"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Webhook WordPress": {
+      "main": [
+        [
+          {
+            "node": "Origem WordPress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook InLead": {
+      "main": [
+        [
+          {
+            "node": "Origem InLead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Origem WordPress": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Origem InLead": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Extrair Campos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair Campos": {
+      "main": [
+        [
+          {
+            "node": "Payload Valido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Payload Valido?": {
+      "main": [
+        [
+          {
+            "node": "Listar CFs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Listar CFs": {
+      "main": [
+        [
+          {
+            "node": "Mapear Campos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mapear Campos": {
+      "main": [
+        [
+          {
+            "node": "Buscar Contato GHL",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Linha Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Contato GHL": {
+      "main": [
+        [
+          {
+            "node": "Contato Existe?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contato Existe?": {
+      "main": [
+        [
+          {
+            "node": "Atualizar Contato",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Criar Contato",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Linha Sheets": {
+      "main": [
+        [
+          {
+            "node": "Backup Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "__ERROR_WF_ID__"
+  }
+}
