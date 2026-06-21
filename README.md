@@ -99,6 +99,7 @@ MIT.
 Feito pela **Triadeflow**.
 
 - Site: [triadeflow.com.br](https://triadeflow.com.br)
-- Instagram: [@triadeflow.ia](https://instagram.com/triadeflow.ia)
+- Instagram: [@triadeflow.ia](https://instagram.com/triadeflow.ia) · [@alexcamposcrm](https://instagram.com/alexcamposcrm)
 - E-mail: contato@triadeflow.com.br
 - Telefone: (11) 4863-4209
+- WhatsApp: [+55 19 98380-5908](https://wa.me/5519983805908)
