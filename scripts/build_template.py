@@ -200,6 +200,29 @@ return { json: {
   dados: JSON.stringify(d._all_fields || {})
 }};"""
 
+# linha no schema da planilha do cliente (ex: planilha da Julia) - cabecalhos exatos
+LINHA_CLIENTE = r"""const d = $('Mapear Campos').item.json;
+const al = d._all_fields || {};
+function f(name){ for (const k of Object.keys(al)){ if (k.toLowerCase() === name.toLowerCase()) return al[k]; } return ''; }
+return { json: {
+  "Nome": d.nome || '',
+  "Telefone": d.telefone || '',
+  "Email": d.email || '',
+  "GÊNERO": f('Gênero'),
+  "IDADE": f('Faixa de Idade'),
+  "JÁ FEZ ANTES?": f('Já fez harmonização antes'),
+  "O QUE INCOMODA?": f('O que incomoda'),
+  "SITUAÇÕES DESCONFORTÁVEIS": f('Situações desconfortáveis'),
+  "FARIA?": f('Disposição (Faria)'),
+  "Campanha": f('utm_campaign'),
+  "Público": f('utm_term'),
+  "Anúncio": f('utm_content'),
+  "Termo": f('utm_medium'),
+  "Fonte": f('utm_source'),
+  "Origem": d.origem || '',
+  "Data de cadastro": d.data_cadastro || ''
+}};"""
+
 # ---------------- node builders ----------------
 
 CRED = {"httpHeaderAuth": {"id": "__CRED_ID__", "name": "__CRED_NAME__"}}
@@ -241,10 +264,10 @@ def http_node(name, method, url, x, y, query=None, json_body=None):
             "position": [x, y], "credentials": json.loads(json.dumps(CRED))}
 
 
-def sheets_node(name, x, y):
+def sheets_node(name, x, y, doc="__SHEET_ID__"):
     return {"parameters": {
         "operation": "append",
-        "documentId": {"__rl": True, "mode": "id", "value": "__SHEET_ID__"},
+        "documentId": {"__rl": True, "mode": "id", "value": doc},
         "sheetName": {"__rl": True, "mode": "list", "value": "gid=0"},
         "columns": {"mappingMode": "autoMapInputData", "value": {}, "matchingColumns": [], "schema": []},
         "options": {}},
@@ -288,6 +311,8 @@ nodes = [
     http_node("Criar Contato", "POST", "https://services.leadconnectorhq.com/contacts/", 1220, 60, json_body=CRIAR_BODY),
     code_node("Linha Sheets", LINHA_SHEETS, 780, 220),
     sheets_node("Backup Sheets", 1000, 220),
+    code_node("Linha Cliente", LINHA_CLIENTE, 780, 380),
+    sheets_node("Backup Cliente", 1000, 380, "__SHEET_JULIA_ID__"),
 ]
 
 connections = {
@@ -300,10 +325,12 @@ connections = {
     "Payload Valido?": {"main": [[{"node": "Listar CFs", "type": "main", "index": 0}], []]},
     "Listar CFs": {"main": [[{"node": "Mapear Campos", "type": "main", "index": 0}]]},
     "Mapear Campos": {"main": [[{"node": "Buscar Contato GHL", "type": "main", "index": 0},
-                               {"node": "Linha Sheets", "type": "main", "index": 0}]]},
+                               {"node": "Linha Sheets", "type": "main", "index": 0},
+                               {"node": "Linha Cliente", "type": "main", "index": 0}]]},
     "Buscar Contato GHL": {"main": [[{"node": "Contato Existe?", "type": "main", "index": 0}]]},
     "Contato Existe?": {"main": [[{"node": "Atualizar Contato", "type": "main", "index": 0}], [{"node": "Criar Contato", "type": "main", "index": 0}]]},
     "Linha Sheets": {"main": [[{"node": "Backup Sheets", "type": "main", "index": 0}]]},
+    "Linha Cliente": {"main": [[{"node": "Backup Cliente", "type": "main", "index": 0}]]},
 }
 
 wf = {"name": "__NOME_WF__", "nodes": nodes, "connections": connections,

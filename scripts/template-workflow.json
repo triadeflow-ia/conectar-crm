@@ -386,6 +386,56 @@
         }
       },
       "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $('Mapear Campos').item.json;\nconst al = d._all_fields || {};\nfunction f(name){ for (const k of Object.keys(al)){ if (k.toLowerCase() === name.toLowerCase()) return al[k]; } return ''; }\nreturn { json: {\n  \"Nome\": d.nome || '',\n  \"Telefone\": d.telefone || '',\n  \"Email\": d.email || '',\n  \"GÊNERO\": f('Gênero'),\n  \"IDADE\": f('Faixa de Idade'),\n  \"JÁ FEZ ANTES?\": f('Já fez harmonização antes'),\n  \"O QUE INCOMODA?\": f('O que incomoda'),\n  \"SITUAÇÕES DESCONFORTÁVEIS\": f('Situações desconfortáveis'),\n  \"FARIA?\": f('Disposição (Faria)'),\n  \"Campanha\": f('utm_campaign'),\n  \"Público\": f('utm_term'),\n  \"Anúncio\": f('utm_content'),\n  \"Termo\": f('utm_medium'),\n  \"Fonte\": f('utm_source'),\n  \"Origem\": d.origem || '',\n  \"Data de cadastro\": d.data_cadastro || ''\n}};"
+      },
+      "id": "linha-cliente",
+      "name": "Linha Cliente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__SHEET_JULIA_ID__"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "backup-cliente",
+      "name": "Backup Cliente",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1000,
+        380
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "__GS_CRED_ID__",
+          "name": "__GS_CRED_NAME__"
+        }
+      },
+      "onError": "continueRegularOutput"
     }
   ],
   "connections": {
@@ -490,6 +540,11 @@
             "node": "Linha Sheets",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Linha Cliente",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -528,6 +583,17 @@
         [
           {
             "node": "Backup Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Linha Cliente": {
+      "main": [
+        [
+          {
+            "node": "Backup Cliente",
             "type": "main",
             "index": 0
           }

@@ -10,7 +10,7 @@ Uso:
 """
 import json, os, sys, subprocess
 
-N8N_SECRETS = os.path.expanduser("~/.secrets/n8n-triadeflow.env")
+N8N_SECRETS = os.path.expanduser(os.environ.get("CONECTAR_CRM_ENV") or "~/.secrets/n8n-triadeflow.env")
 PATH = "util-criar-planilha"
 WF_NAME = "Util - Criar Planilha Backup"
 

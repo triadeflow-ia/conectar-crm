@@ -18,8 +18,8 @@ Copie a pasta `conectar-crm/` inteira para:
 ## 2. Pegar a API key do n8n dela
 No n8n: **Settings → n8n API → Create API key**. Copie a key e a URL base (ex `https://n8n.suaempresa.com`).
 
-## 3. Criar o arquivo de configuração
-Crie `~/.secrets/n8n-triadeflow.env` (o nome é só convenção) com:
+## 3. Criar o arquivo de configuração (um por ambiente/n8n)
+Crie `~/.secrets/conectar-crm/<conta>.env` (ex `triadeflow.env`, `epelicula.env`) com:
 ```
 N8N_BASE_URL=https://SEU-n8n.com
 N8N_API_KEY=<a api key do passo 2>
@@ -35,7 +35,15 @@ TELEGRAM_CHAT_ID=<seu id no @userinfobot>
 # EVOLUTION_APIKEY=
 # ALERT_WHATSAPP=55DDDNUMERO
 ```
-`chmod 600 ~/.secrets/n8n-triadeflow.env`
+```
+mkdir -p ~/.secrets/conectar-crm && chmod 600 ~/.secrets/conectar-crm/<conta>.env
+```
+
+**Multi-ambiente:** antes de rodar a skill/scripts, aponte para o ambiente desejado:
+```
+export CONECTAR_CRM_ENV=~/.secrets/conectar-crm/<conta>.env
+```
+Assim vários n8n (clientes/ambientes diferentes) convivem sem um sobrescrever o outro. Se `CONECTAR_CRM_ENV` não for definido, o padrão é `~/.secrets/n8n-triadeflow.env`.
 
 ## 4. Conectar a credencial Google Sheets no n8n
 No n8n dela: **Credentials → Add → Google Sheets OAuth2 API** → Sign in with Google (a conta que vai guardar as planilhas de backup) → salvar.

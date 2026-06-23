@@ -12,7 +12,7 @@ Uso: python3 build_error_wf.py
 """
 import json, os, subprocess, sys
 
-N8N_SECRETS = os.path.expanduser("~/.secrets/n8n-triadeflow.env")
+N8N_SECRETS = os.path.expanduser(os.environ.get("CONECTAR_CRM_ENV") or "~/.secrets/n8n-triadeflow.env")
 KV = {k.strip(): v.strip() for k, v in (l.split("=", 1) for l in open(N8N_SECRETS)
       if l.strip() and not l.startswith("#") and "=" in l)}
 BASE, KEY = KV["N8N_BASE_URL"], KV["N8N_API_KEY"]

@@ -17,7 +17,8 @@ Uso:
 """
 import argparse, json, os, sys, subprocess
 
-N8N_SECRETS = os.path.expanduser("~/.secrets/n8n-triadeflow.env")
+# multi-ambiente: define CONECTAR_CRM_ENV pra apontar pro env do n8n desejado
+N8N_SECRETS = os.path.expanduser(os.environ.get("CONECTAR_CRM_ENV") or "~/.secrets/n8n-triadeflow.env")
 CLIENT_SECRETS_DIR = os.path.expanduser("~/.secrets/clientes")
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "template-workflow.json")
 
@@ -74,6 +75,7 @@ def main():
     c = load_kv(csec)
     location, pit = c["LOCATION_ID"], c["PIT"]
     sheet_id = c.get("SHEET_ID", "")
+    sheet_julia_id = c.get("SHEET_JULIA_ID", "")
 
     nome_wf = a.nome or f"Form->GHL | {a.cliente}"
     cred_name = f"GHL PIT | {a.cliente}"
@@ -98,19 +100,27 @@ def main():
               .replace("__SHEET_ID__", sheet_id)
               .replace("__ERROR_WF_ID__", error_wf_id)
               .replace("__GS_CRED_ID__", gs_cred_id)
-              .replace("__GS_CRED_NAME__", gs_cred_name))
+              .replace("__GS_CRED_NAME__", gs_cred_name)
+              .replace("__SHEET_JULIA_ID__", sheet_julia_id))
     wf = json.loads(tpl)
     # sem error workflow configurado -> nao setar (n8n rejeita id vazio)
     if not error_wf_id:
         wf.get("settings", {}).pop("errorWorkflow", None)
-    # sem credencial Google -> remover o ramo de Backup Sheets (mantém GHL funcionando)
-    if not gs_cred_id:
-        drop = {"Linha Sheets", "Backup Sheets"}
-        wf["nodes"] = [n for n in wf["nodes"] if n["name"] not in drop]
-        wf["connections"].pop("Linha Sheets", None)
+    # remove ramos de Sheets sem credencial/destino (GHL sempre funciona)
+    def _drop_branch(linha, backup):
+        wf["nodes"] = [n for n in wf["nodes"] if n["name"] not in (linha, backup)]
+        wf["connections"].pop(linha, None)
         mc = wf["connections"].get("Mapear Campos", {}).get("main", [[]])
         if mc and mc[0]:
-            mc[0] = [c for c in mc[0] if c["node"] != "Linha Sheets"]
+            mc[0][:] = [x for x in mc[0] if x["node"] != linha]
+    if not gs_cred_id:
+        _drop_branch("Linha Sheets", "Backup Sheets")
+        _drop_branch("Linha Cliente", "Backup Cliente")
+    else:
+        if not sheet_id:
+            _drop_branch("Linha Sheets", "Backup Sheets")
+        if not sheet_julia_id:
+            _drop_branch("Linha Cliente", "Backup Cliente")
 
     # 3) cria workflow
     st, res = api(base, key, "POST", "/api/v1/workflows", wf)
